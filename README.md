@@ -1606,6 +1606,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - GitHub: [@OmniStruo](https://github.com/OmniStruo)
 - Project: [EchoWarehouse](https://github.com/OmniStruo/EchoWarehouse)
 
+**Devs**
+
 ---
 
-**Made with ❤️ and 🎤 by OmniStruo**
