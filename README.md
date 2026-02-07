@@ -17,20 +17,27 @@ Modern, multiplatform warehouse management system with voice control powered by 
 - [Features](#-features)
 - [Technology Stack](#-technology-stack)
 - [Architecture](#-architecture)
+- [Database Schema](#-database-schema)
 - [Installation](#-installation)
 - [Configuration](#-configuration)
+- [Authentication](#-authentication)
 - [Usage](#-usage)
 - [API Documentation](#-api-documentation)
 - [Voice Commands](#-voice-commands)
 - [Internationalization](#-internationalization)
 - [Project Structure](#-project-structure)
 - [Deployment](#-deployment)
-- [Development](#-development)
 - [License](#-license)
 
 ---
 
 ## ✨ Features
+
+### 🔐 Authentication & Security
+- **Secure user authentication** with JWT tokens
+- **Protected API endpoints** - authentication required for all operations
+- **Registration with secret code** - prevents unauthorized registrations
+- **Role-based access** (extendable for future admin features)
 
 ### 🎙️ Voice Control (AI-powered)
 - **Multi-language speech recognition** (English, Hungarian) with Azure Speech Services
@@ -48,7 +55,8 @@ Modern, multiplatform warehouse management system with voice control powered by 
 - **Multiple units of measurement** (pieces, kg, g, l, ml, etc.)
 - **Automatic conversions** between weight ⟷ volume
 - **Density-based calculations**
-- **Price management** (net/gross, VAT support)
+- **Dynamic VAT calculation** - VAT rate stored in database, loaded on app startup
+- **Net ⟷ Gross price conversion** - automatic calculation in frontend
 - **Location tracking** (shelf, warehouse)
 - **Serial number & article number** management
 - **Stock movement tracking**
@@ -62,6 +70,12 @@ Modern, multiplatform warehouse management system with voice control powered by 
 - **No language parameter in URLs** - locale managed entirely client-side
 - **Instant language switching** - no API calls needed after initial load
 - **Offline support** - works without backend once translations are loaded
+
+### 💰 Dynamic VAT Management
+- **Database-driven VAT rate** - configurable without code changes
+- **Frontend caching** - VAT rate loaded once on app startup
+- **Automatic price calculation** - enter net or gross, the other is calculated automatically
+- **Historical tracking** - VAT rate changes tracked with effective dates
 
 ### 🔍 Search & Filter
 - Quick search by name, article number, serial number
@@ -83,11 +97,14 @@ Modern, multiplatform warehouse management system with voice control powered by 
 ```
 ✅ .NET 8.0 (multiplatform: Windows, Linux, macOS)
 ✅ ASP.NET Core Web API
+✅ ASP.NET Core Identity (authentication)
+✅ JWT Bearer Authentication
 ✅ Entity Framework Core 8.0 (Code-First)
 ✅ Npgsql (PostgreSQL provider)
 ✅ Dapper (raw SQL queries)
 ✅ Azure.CognitiveServices.Speech
 ✅ Google.Cloud.AIPlatform.V1 (Gemini API)
+✅ Swagger/OpenAPI (API documentation)
 ✅ AutoMapper
 ✅ FluentValidation
 ✅ Serilog (structured logging)
@@ -106,8 +123,10 @@ Modern, multiplatform warehouse management system with voice control powered by 
 ✅ Tailwind CSS
 ✅ Axios (HTTP client)
 ✅ Context API (state management + localization)
-✅ LocalStorage (locale persistence)
+✅ LocalStorage (locale + auth token persistence)
 ✅ Custom useLocalization hook
+✅ Custom useAuth hook
+✅ Protected Routes
 ✅ Web Speech API
 ```
 
@@ -119,6 +138,8 @@ Modern, multiplatform warehouse management system with voice control powered by 
 ✅ Full-text search (PostgreSQL native)
 ✅ JSONB support (voice command logs)
 ✅ Resource key storage for i18n
+✅ User authentication storage
+✅ VAT settings storage
 ```
 
 ### DevOps & Hosting
@@ -128,6 +149,7 @@ Modern, multiplatform warehouse management system with voice control powered by 
 ✅ Supabase (PostgreSQL hosting)
 ✅ GitHub Actions (CI/CD)
 ✅ Docker support
+✅ Environment variable management (.env files)
 ```
 
 ---
@@ -140,37 +162,46 @@ Modern, multiplatform warehouse management system with voice control powered by 
 ┌──────────────────────────────────────────────────────┐
 │                 React Frontend                        │
 │  ┌────────────────────────────────────────────────┐  │
-│  │  LocalizationContext (all resource keys)      │  │
-│  │  - Loaded once on app startup                 │  │
-│  │  - Stored in React Context                    │  │
-│  │  - useLocalization() hook for key resolution  │  │
+│  │  Authentication Check (Login/Register)         │  │
+│  │  → JWT token in LocalStorage                   │  │
+│  └────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────┐  │
+│  │  App Initialization (if authenticated):        │  │
+│  │  1. Load VAT rate (ONE TIME)                   │  │
+│  │  2. Load localization (ONE TIME)               │  │
+│  │  3. Store in Context                           │  │
 │  └────────────────────────────────────────────────┘  │
 │  ┌────────────────────────────────────────────────┐  │
 │  │  Voice Input  │  Product CRUD  │  Dashboard   │  │
-│  │  All text via useLocalization('UI_KEY')       │  │
+│  │  All requests include JWT token               │  │
+│  │  Prices calculated with cached VAT rate       │  │
 │  └────────────────────────────────────────────────┘  │
 └───────────────────────┬──────────────────────────────┘
-                        │ HTTPS/REST API
-                        │ (lang NOT in every request)
+                        │ HTTPS/REST API + JWT
                         ▼
 ┌──────────────────────────────────────────────────────┐
 │            ASP.NET Core Web API (.NET 8)             │
 │  ┌────────────────────────────────────────────────┐  │
+│  │  JWT Authentication Middleware                 │  │
+│  │  → Validates token on every request            │  │
+│  └────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────┐  │
 │  │           Controllers Layer                    │  │
+│  │  AuthController (login/register)               │  │
 │  │  VoiceController │ ProductsController │ ...    │  │
-│  │  LocalizationController (one-time load)       │  │
+│  │  LocalizationController │ SettingsController  │  │
+│  │  Swagger UI at /swagger                       │  │
 │  └────────────────┬───────────────────────────────┘  │
 │                   │                                   │
 │  ┌────────────────▼───────────────────────────────┐  │
 │  │           Services Layer                       │  │
-│  │  VoiceService │ SpeechService │ AIService      │  │
-│  │  LocalizationService (get all keys by locale) │  │
+│  │  AuthService │ VoiceService │ AIService        │  │
+│  │  LocalizationService │ SettingsService         │  │
 │  └────────────────┬───────────────────────────────┘  │
 │                   │                                   │
-│  ┌────────────────▼─────────────────────────��─────┐  │
+│  ┌────────────────▼───────────────────────────────┐  │
 │  │      Repository Pattern + UnitOfWork           │  │
-│  │  IProductRepo │ IVoiceRepo │ IHistoryRepo      │  │
-│  │  IResourceKeyRepo (localization)               │  │
+│  │  IUserRepo │ IProductRepo │ IVatSettingsRepo  │  │
 │  └────────────────┬───────────────────────────────┘  │
 │                   │                                   │
 │  ┌────────────────▼───────────────────────────────┐  │
@@ -182,45 +213,365 @@ Modern, multiplatform warehouse management system with voice control powered by 
                      ▼
       ┌──────────────────────────────────┐
       │   PostgreSQL Database            │
+      │  Users (authentication)          │
       │  Products │ History │ VoiceLog   │
-      │  ResourceKeys (all UI text)      │
-      │  - Key: UI_Product_Name          │
-      │  - Locale: en-US                 │
-      │  - Value: "Product Name"         │
+      │  ResourceKeys (i18n)             │
+      │  VatSettings (tax rate)          │
       └──────────────────────────────────┘
 
       ┌──────────────────────────────────┐
       │   External Services              │
       │  Azure Speech │ Google Gemini    │
       └──────────────────────────────────┘
+
+      ┌──────────────────────────────────┐
+      │   Environment Variables          │
+      │  REGISTRATION_SECRET (not in git)│
+      └──────────────────────────────────┘
 ```
 
-### Localization Flow
+### Backend Architecture Layers
+
+```
+EchoWarehouse.API/
+├── Controllers/          // API endpoints
+├── Services/            // Business logic
+│   ├── Interfaces/
+│   └── Implementations/
+├── Repositories/        // Data access (Repository Pattern)
+│   ├── Interfaces/
+│   └── Implementations/
+├── Data/               // EF Core Context, Migrations
+├── Models/             // Domain entities
+│   ├── Entities/
+│   ├── DTOs/
+│   └── ViewModels/
+├── Middleware/         // Custom middleware + JWT Auth
+├── Validators/         // FluentValidation
+└── Extensions/         // Service extensions, helpers
+```
+
+### Application Flow
 
 ```
 1. User opens app
    ↓
-2. Check LocalStorage for saved locale (e.g., "hu-HU")
+2. Check LocalStorage for JWT token
    ↓
-3. Call GET /api/localization/all?locale=hu-HU (ONE TIME)
+3a. No token → Show Login/Register screen
+3b. Has token → Validate with backend
    ↓
-4. Backend returns ALL resource keys for that locale
-   {
-     "UI_Product_Name": "Termék neve",
-     "UI_Product_Quantity": "Mennyiség",
-     "UI_Voice_Listening": "Hallgatlak...",
-     ...500+ keys
-   }
+4. If authenticated:
+   - Load VAT rate: GET /api/settings/vat (ONE TIME)
+   - Load localization: GET /api/localization/all?locale=en-US (ONE TIME)
+   - Store both in Context
    ↓
-5. Store in LocalizationContext (React Context)
+5. Main app ready:
+   - All requests include Authorization: Bearer {token}
+   - Prices calculated with cached VAT
+   - UI text from cached localization
    ↓
-6. Components use: const t = useLocalization()
-                    <h1>{t('UI_Product_Name')}</h1>
-   ↓
-7. Language switch: Clear context, fetch new locale, reload context
-   ↓
-8. NO MORE API CALLS for translations!
+6. Logout → Clear token, redirect to login
 ```
+
+---
+
+## 💾 Database Schema
+
+### Entity Relationship Diagram
+
+```
+┌─────────────────┐
+│      Users      │
+└─────────────────┘
+        (no direct relations - authentication only)
+
+┌─────────────────┐
+│    Products     │
+└────────┬────────┘
+         │
+         │ 1:N
+         │
+         ├─────────────────┐
+         │                 │
+         ▼                 ▼
+┌─────────────────┐  ┌─────────────────┐
+│     History     │  │ Voice Commands  │
+└─────────────────┘  └─────────────────┘
+
+┌─────────────────┐
+│  Resource Keys  │  (independent - i18n)
+└─────────────────┘
+
+┌─────────────────┐
+│  VAT Settings   │  (independent - tax configuration)
+└─────────────────┘
+```
+
+### Tables Overview
+
+| Table Name | Purpose | Key Relations |
+|------------|---------|---------------|
+| `users` | Store user accounts for authentication | Independent |
+| `products` | Store all warehouse products and inventory | Parent to `history` and `voice_commands` |
+| `history` | Audit trail of all product changes | Foreign key to `products` |
+| `voice_commands` | Log of all voice interactions and AI parsing | Foreign key to `products` (nullable) |
+| `resource_keys` | Localization strings for UI | Independent |
+| `vat_settings` | VAT/Tax rate configuration | Independent |
+
+---
+
+### Table: `users`
+
+**Purpose:** User authentication and authorization
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique user identifier |
+| `username` | VARCHAR(50) | NOT NULL, UNIQUE | Username for login |
+| `email` | VARCHAR(255) | NOT NULL, UNIQUE | User email address |
+| `password_hash` | VARCHAR(255) | NOT NULL | Hashed password (bcrypt) |
+| `role` | VARCHAR(20) | NOT NULL, Default: 'user' | User role (user, admin) |
+| `is_active` | BOOLEAN | Default: true | Account active status |
+| `created_at` | TIMESTAMP | Default: NOW() | Account creation timestamp |
+| `updated_at` | TIMESTAMP | Default: NOW() | Last update timestamp |
+| `last_login` | TIMESTAMP | NULL | Last login timestamp |
+
+**Indexes:**
+- Primary Key: `id`
+- Unique Index on: `username`, `email`
+- Index on: `role`, `is_active`
+
+**Notes:**
+- Passwords are hashed using bcrypt with salt
+- JWT tokens are issued upon successful login
+- Role field is extendable for future RBAC implementation
+
+---
+
+### Table: `vat_settings`
+
+**Purpose:** Store VAT/Tax rate configuration
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique setting identifier |
+| `rate` | DECIMAL(5,2) | NOT NULL | VAT rate percentage (e.g., 27.00 for 27%) |
+| `is_active` | BOOLEAN | NOT NULL, Default: true | Whether this rate is currently active |
+| `effective_from` | TIMESTAMP | NOT NULL | Date from which this rate is effective |
+| `description` | TEXT | NULL | Description or reason for the rate |
+| `created_at` | TIMESTAMP | Default: NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | Default: NOW() | Last update timestamp |
+
+**Indexes:**
+- Primary Key: `id`
+- Index on: `is_active`, `effective_from`
+
+**Business Rules:**
+- Only one record should have `is_active = true` at a time
+- Frontend loads the active VAT rate on app startup
+- Historical rates are preserved for audit purposes
+
+**Example records:**
+
+| rate | is_active | effective_from | description |
+|------|-----------|----------------|-------------|
+| 27.00 | true | 2024-01-01 | Hungarian standard VAT rate |
+| 25.00 | false | 2023-01-01 | Previous VAT rate |
+
+---
+
+### Table: `products`
+
+**Purpose:** Main inventory table storing all product information
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique product identifier |
+| `name` | VARCHAR(255) | NOT NULL | Product name |
+| `description` | TEXT | NULL | Detailed product description |
+| `quantity` | DECIMAL(10,2) | NOT NULL, Default: 0 | Current stock quantity |
+| `unit` | VARCHAR(20) | NULL | Unit of measurement (kg, l, pieces, etc.) |
+| `density` | DECIMAL(10,4) | NULL | Product density for weight/volume conversion |
+| `density_unit` | VARCHAR(20) | NULL | Density unit (g/cm³, kg/l, etc.) |
+| `warehouse_entry_date` | TIMESTAMP | NOT NULL | Date when product entered warehouse |
+| `serial_number` | VARCHAR(100) | NULL | Product serial number |
+| `article_number` | VARCHAR(100) | NULL | Product article/SKU number |
+| `location` | VARCHAR(100) | NULL | Storage location (shelf, zone, etc.) |
+| `net_price` | DECIMAL(10,2) | NULL | Net price (without tax) |
+| `gross_price` | DECIMAL(10,2) | NULL | Gross price (with tax) |
+| `voice_created` | BOOLEAN | Default: false | Flag indicating if created via voice command |
+| `created_at` | TIMESTAMP | Default: NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | Default: NOW() | Last update timestamp |
+
+**Indexes:**
+- Primary Key: `id`
+- Index on: `name`, `article_number`, `serial_number`, `location`, `created_at`
+
+**Notes:**
+- Price calculation (net ↔ gross) is done on frontend using cached VAT rate
+- Both net_price and gross_price are stored for data integrity
+
+---
+
+### Table: `history`
+
+**Purpose:** Audit trail tracking all product changes and stock movements
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique history record identifier |
+| `product_id` | UUID | NOT NULL, Foreign Key | Reference to products table |
+| `action_type` | VARCHAR(50) | NOT NULL | Action type: created, updated, added, removed |
+| `quantity_change` | DECIMAL(10,2) | NULL | Amount of quantity changed |
+| `unit` | VARCHAR(20) | NULL | Unit of measurement for the change |
+| `quantity_before` | DECIMAL(10,2) | NULL | Quantity before the action |
+| `quantity_after` | DECIMAL(10,2) | NULL | Quantity after the action |
+| `description` | TEXT | NULL | Additional description of the change |
+| `created_at` | TIMESTAMP | Default: NOW() | When the action occurred |
+
+**Foreign Keys:**
+- `product_id` → `products.id` (ON DELETE CASCADE)
+
+**Indexes:**
+- Primary Key: `id`
+- Index on: `product_id`, `created_at`, `action_type`
+
+---
+
+### Table: `voice_commands`
+
+**Purpose:** Log all voice command interactions and AI parsing results
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique command identifier |
+| `raw_transcript` | TEXT | NOT NULL | Original speech-to-text output |
+| `parsed_intent` | JSONB | NULL | AI-parsed intent (JSON structure) |
+| `action_taken` | VARCHAR(50) | NULL | Action executed: add, remove, update, search, delete |
+| `product_id` | UUID | NULL, Foreign Key | Reference to affected product (if any) |
+| `locale` | VARCHAR(10) | NULL | Language code used (en-US, hu-HU) |
+| `success` | BOOLEAN | Default: true | Whether command executed successfully |
+| `error_message` | TEXT | NULL | Error details if command failed |
+| `processing_time_ms` | INTEGER | NULL | Time taken to process command (milliseconds) |
+| `created_at` | TIMESTAMP | Default: NOW() | Command timestamp |
+
+**Foreign Keys:**
+- `product_id` → `products.id` (ON DELETE SET NULL)
+
+**Indexes:**
+- Primary Key: `id`
+- Index on: `created_at`, `locale`, `action_taken`, `success`
+- GIN Index on: `parsed_intent` (for JSONB queries)
+
+**Example `parsed_intent` JSONB structure:**
+```json
+{
+  "action": "add",
+  "product": "cement",
+  "quantity": 50,
+  "unit": "kg",
+  "location": "shelf 12",
+  "confidence": 0.95
+}
+```
+
+---
+
+### Table: `resource_keys`
+
+**Purpose:** Store all UI text translations for internationalization
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | Primary Key, Default: auto-generated | Unique resource key identifier |
+| `key` | VARCHAR(255) | NOT NULL | Resource key (e.g., UI_Product_Name) |
+| `locale` | VARCHAR(10) | NOT NULL | Language code (en-US, hu-HU) |
+| `value` | TEXT | NOT NULL | Translated text value |
+| `category` | VARCHAR(50) | NULL | Category: product, voice, common, menu, etc. |
+| `description` | TEXT | NULL | Description for translators |
+| `created_at` | TIMESTAMP | Default: NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | Default: NOW() | Last update timestamp |
+
+**Unique Constraints:**
+- Unique combination of (`key`, `locale`)
+
+**Indexes:**
+- Primary Key: `id`
+- Unique Index on: (`key`, `locale`)
+- Index on: `locale`, `category`
+
+**Example records:**
+
+| key | locale | value | category |
+|-----|--------|-------|----------|
+| UI_Product_Name | en-US | Product Name | product |
+| UI_Product_Name | hu-HU | Termék neve | product |
+| UI_Voice_Listening | en-US | Listening... | voice |
+| UI_Voice_Listening | hu-HU | Hallgatlak... | voice |
+| UI_Auth_Login | en-US | Login | auth |
+| UI_Auth_Login | hu-HU | Bejelentkezés | auth |
+
+---
+
+### Database Views
+
+#### View: `product_statistics`
+
+**Purpose:** Aggregate product transaction statistics
+
+**Columns:**
+- `id` - Product ID
+- `name` - Product name
+- `quantity` - Current quantity
+- `unit` - Unit of measurement
+- `location` - Storage location
+- `transaction_count` - Total number of transactions
+- `total_added` - Total quantity added
+- `total_removed` - Total quantity removed
+- `last_transaction_date` - Most recent transaction
+
+**Source:** Aggregates data from `products` and `history` tables
+
+---
+
+#### View: `voice_analytics`
+
+**Purpose:** Voice command usage and performance metrics
+
+**Columns:**
+- `locale` - Language code
+- `action_taken` - Command action type
+- `command_count` - Total commands
+- `avg_processing_time` - Average processing time
+- `success_count` - Successful commands
+- `error_count` - Failed commands
+- `success_rate` - Percentage of successful commands
+
+**Source:** Aggregates data from `voice_commands` table
+
+---
+
+### Data Relationships
+
+```
+users (independent - authentication only)
+
+products (1) ──────< (N) history
+   │
+   │ (optional)
+   │
+   └──────< (N) voice_commands
+
+resource_keys (independent - no foreign keys)
+
+vat_settings (independent - no foreign keys)
+```
+
+**Cascade Rules:**
+- Delete product → Cascade delete all history records
+- Delete product → Set product_id to NULL in voice_commands
+- Delete user → No cascades (users are independent)
 
 ---
 
@@ -250,20 +601,62 @@ cd backend/EchoWarehouse.API
 # Install NuGet packages
 dotnet restore
 
-# Configure database connection string
-# Edit appsettings.json or appsettings.Development.json
+# Configure environment variables
+# Create appsettings.Development.json (NOT in git)
+# OR create .env file
 
+# IMPORTANT: Set registration secret
+# This secret is required for user registration
+# Keep it secure and DO NOT commit to git
+```
+
+**Create `appsettings.Development.json`:**
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Database=echowarehouse;Username=postgres;Password=yourpassword"
+  },
+  "Authentication": {
+    "RegistrationSecret": "your-super-secret-registration-code-here",
+    "JwtSecret": "your-jwt-secret-key-minimum-32-characters",
+    "JwtIssuer": "EchoWarehouse",
+    "JwtAudience": "EchoWarehouse",
+    "JwtExpirationHours": 24
+  },
+  "AzureSpeech": {
+    "SubscriptionKey": "YOUR_AZURE_SPEECH_KEY",
+    "Region": "westeurope"
+  },
+  "GoogleGemini": {
+    "ApiKey": "YOUR_GOOGLE_GEMINI_API_KEY",
+    "ProjectId": "your-project-id",
+    "Location": "us-central1",
+    "Model": "gemini-1.5-flash"
+  }
+}
+```
+
+**Add to `.gitignore`:**
+```
+appsettings.Development.json
+.env
+*.env
+```
+
+```bash
 # Run migrations
 dotnet ef database update
 
-# Seed resource keys (initial localization data)
-dotnet run --seed-localization
+# Seed initial data (localization + default VAT)
+dotnet run --seed-data
 
 # Run application
 dotnet run
 ```
 
 Backend available at: `https://localhost:5001`
+
+**Swagger UI available at:** `https://localhost:5001/swagger`
 
 ### 3️⃣ Frontend Setup
 
@@ -275,15 +668,53 @@ npm install
 
 # Environment variables
 cp .env.example .env
-# Edit .env file (API URL, etc.)
+# Edit .env file
+```
 
+**Edit `.env`:**
+```env
+VITE_API_URL=https://localhost:5001
+VITE_ENABLE_VOICE=true
+VITE_DEFAULT_LOCALE=en-US
+```
+
+```bash
 # Start development server
 npm run dev
 ```
 
 Frontend available at: `http://localhost:5173`
 
-### 4️⃣ Docker (Optional)
+### 4️⃣ Create First User
+
+**Option A: Using API directly (Postman, curl, etc.)**
+
+```bash
+curl -X POST https://localhost:5001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "email": "admin@echowarehouse.com",
+    "password": "SecurePassword123!",
+    "registrationSecret": "your-super-secret-registration-code-here"
+  }'
+```
+
+**Option B: Using Swagger UI**
+
+1. Navigate to `https://localhost:5001/swagger`
+2. Find `POST /api/auth/register`
+3. Click "Try it out"
+4. Fill in the request body with registration secret
+5. Execute
+
+### 5️⃣ Login
+
+After creating a user, login via:
+- Frontend: `http://localhost:5173` (login screen)
+- API: `POST /api/auth/login`
+
+### 6️⃣ Docker (Optional)
 
 ```bash
 # Start full stack (backend + PostgreSQL)
@@ -304,6 +735,13 @@ docker-compose up -d postgres
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Database=echowarehouse;Username=postgres;Password=yourpassword;SSL Mode=Prefer"
   },
+  "Authentication": {
+    "RegistrationSecret": "SET_IN_ENVIRONMENT_VARIABLE",
+    "JwtSecret": "SET_IN_ENVIRONMENT_VARIABLE",
+    "JwtIssuer": "EchoWarehouse",
+    "JwtAudience": "EchoWarehouse",
+    "JwtExpirationHours": 24
+  },
   "AzureSpeech": {
     "SubscriptionKey": "YOUR_AZURE_SPEECH_KEY",
     "Region": "westeurope"
@@ -318,11 +756,20 @@ docker-compose up -d postgres
     "DefaultLocale": "en-US",
     "SupportedLocales": ["en-US", "hu-HU"]
   },
+  "VatSettings": {
+    "DefaultRate": 27.00
+  },
   "Cors": {
     "AllowedOrigins": [
       "http://localhost:5173",
       "https://yourapp.web.app"
     ]
+  },
+  "Swagger": {
+    "Enabled": true,
+    "Title": "EchoWarehouse API",
+    "Version": "v1",
+    "Description": "AI-Powered Voice-Controlled Warehouse Management System API"
   },
   "Logging": {
     "LogLevel": {
@@ -334,6 +781,25 @@ docker-compose up -d postgres
 }
 ```
 
+### Environment Variables (Production - REQUIRED)
+
+**⚠️ NEVER commit these to git!**
+
+```bash
+# Database
+ConnectionStrings__DefaultConnection="Host=your-db-host;Database=echowarehouse;Username=user;Password=pass"
+
+# Authentication (CRITICAL - KEEP SECRET)
+Authentication__RegistrationSecret="your-super-secret-code"
+Authentication__JwtSecret="your-jwt-secret-minimum-32-chars"
+
+# External Services
+AzureSpeech__SubscriptionKey="..."
+GoogleGemini__ApiKey="..."
+
+# Or use Azure Key Vault (recommended for production)
+```
+
 ### Frontend Configuration (`.env`)
 
 ```env
@@ -342,39 +808,180 @@ VITE_ENABLE_VOICE=true
 VITE_DEFAULT_LOCALE=en-US
 ```
 
-### Environment Variables (Production)
+---
 
-```bash
-# Azure App Service
-ConnectionStrings__DefaultConnection="Host=..."
-AzureSpeech__SubscriptionKey="..."
-GoogleGemini__ApiKey="..."
+## 🔐 Authentication
 
-# Or use Azure Key Vault (recommended)
+### Registration Flow
+
+**Endpoint:** `POST /api/auth/register`
+
+**Request:**
+```json
+{
+  "username": "johndoe",
+  "email": "john@example.com",
+  "password": "SecurePassword123!",
+  "registrationSecret": "your-super-secret-registration-code"
+}
 ```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "userId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Response (Invalid Secret):**
+```json
+{
+  "success": false,
+  "message": "Invalid registration secret"
+}
+```
+
+**Notes:**
+- Registration secret is configured in `appsettings.json` or environment variable
+- Secret is **NOT** stored in database
+- This prevents unauthorized users from creating accounts
+- Only users with the secret can register
+
+---
+
+### Login Flow
+
+**Endpoint:** `POST /api/auth/login`
+
+**Request:**
+```json
+{
+  "username": "johndoe",
+  "password": "SecurePassword123!"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expiresAt": "2026-02-08T10:30:00Z",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "johndoe",
+    "email": "john@example.com",
+    "role": "user"
+  }
+}
+```
+
+**Response (Invalid Credentials):**
+```json
+{
+  "success": false,
+  "message": "Invalid username or password"
+}
+```
+
+**Frontend Flow:**
+1. User enters credentials
+2. POST to `/api/auth/login`
+3. Receive JWT token
+4. Store token in LocalStorage
+5. Include token in all subsequent requests: `Authorization: Bearer {token}`
+6. Load VAT settings and localization
+7. Show main app
+
+---
+
+### Protected Routes
+
+**All API endpoints except `/api/auth/*` require authentication.**
+
+**Request Header:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Unauthorized Response (401):**
+```json
+{
+  "message": "Unauthorized",
+  "details": "Invalid or expired token"
+}
+```
+
+**Frontend Protected Routes:**
+- `/` (dashboard)
+- `/products`
+- `/history`
+- `/settings`
+- All other routes except `/login` and `/register`
 
 ---
 
 ## 📖 Usage
 
-### Web Interface
+### First Time Setup
 
-1. **Open the frontend** in your browser
-2. **Select language** (English/Hungarian) from dropdown
-3. **All UI text updates instantly** (no API calls, loaded from Context)
-4. **Click the microphone icon** 🎤
-5. **Speak** naturally in your chosen language:
-   - *"Add 50 kilograms of cement to shelf 12"*
-   - *"Issue 20 pieces of screws"*
-   - *"Search for cement"*
-   - *"Update cement quantity to 100 kilograms"*
-6. **The system automatically** executes the action
+1. **Backend must be running** with database migrated and seeded
+2. **Open frontend** at `http://localhost:5173`
+3. **You'll see the registration screen** (first user only)
+4. **Enter registration details + secret code**
+5. **Login** with your credentials
 
-### Manual Entry
+### Daily Usage
 
-- Use the traditional form to add products
-- Edit existing items
-- Manage stock movements (receive/issue)
+1. **Open the app** at `http://localhost:5173`
+2. **Login** if not already authenticated
+3. **App loads:**
+   - VAT rate from backend (cached)
+   - Localization from backend (cached)
+   - Main interface becomes available
+4. **Select language** (English/Hungarian) from dropdown
+5. **Use voice or manual entry:**
+   - Click microphone 🎤 for voice commands
+   - Use forms for manual product entry
+   - Prices auto-calculate based on VAT rate
+6. **Logout** when done
+
+### VAT Calculation Examples
+
+**Frontend automatically calculates net ↔ gross:**
+
+**Example 1: User enters Net Price**
+- User inputs: Net Price = 1000
+- VAT rate (loaded from backend) = 27%
+- Frontend calculates: Gross Price = 1000 × 1.27 = 1270
+- Both values saved to database
+
+**Example 2: User enters Gross Price**
+- User inputs: Gross Price = 1270
+- VAT rate (loaded from backend) = 27%
+- Frontend calculates: Net Price = 1270 / 1.27 = 1000
+- Both values saved to database
+
+**Formula used:**
+```typescript
+// Net to Gross
+gross = net * (1 + vatRate / 100)
+
+// Gross to Net
+net = gross / (1 + vatRate / 100)
+```
+
+### Swagger API Documentation
+
+Access the interactive API documentation at:
+
+**Development:** `https://localhost:5001/swagger`
+
+**Production:** `https://your-api.azurewebsites.net/swagger`
+
+**Note:** Some endpoints in Swagger require authentication. Click "Authorize" and enter your JWT token.
 
 ---
 
@@ -386,52 +993,153 @@ Development: https://localhost:5001/api
 Production: https://your-api.azurewebsites.net/api
 ```
 
-### Endpoints
+### API Endpoints Overview
 
-#### **Localization (Called ONCE on app startup)**
+For full interactive API documentation, visit **[Swagger UI](/swagger)** after starting the backend.
 
+#### **Authentication (Public - No Auth Required)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | Register new user (requires secret) |
+| POST | `/api/auth/login` | Login and get JWT token |
+
+#### **Authentication (Protected - Auth Required)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/logout` | Logout current user |
+| GET | `/api/auth/me` | Get current user info |
+| PUT | `/api/auth/change-password` | Change password |
+
+#### **Settings (Protected)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/settings/vat` | Get active VAT rate (called once on app startup) |
+
+#### **Localization (Protected - Called ONCE on app startup)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/localization/all?locale={locale}` | Get ALL resource keys for a locale |
+| GET | `/api/localization/locales` | Get supported locales |
+
+#### **Products (Protected)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/products` | Get all products (paginated) |
+| GET | `/api/products/{id}` | Get single product by ID |
+| POST | `/api/products` | Create new product |
+| PUT | `/api/products/{id}` | Update product |
+| DELETE | `/api/products/{id}` | Delete product |
+| GET | `/api/products/search?q={query}` | Search products |
+| POST | `/api/products/{id}/stock` | Stock operation (add/remove) |
+| GET | `/api/products/statistics` | Get product statistics |
+
+#### **Voice (Protected)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/voice/process` | Process voice command |
+| GET | `/api/voice/history` | Get voice command history |
+| GET | `/api/voice/analytics` | Get voice analytics |
+
+#### **History (Protected)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/history` | Get all operations |
+| GET | `/api/history/product/{id}` | Get product history |
+| GET | `/api/history/export` | Export history (CSV/Excel) |
+
+#### **Health (Public)**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Health check endpoint |
+| GET | `/api/health/ready` | Readiness probe |
+| GET | `/api/health/live` | Liveness probe |
+
+### Example Responses
+
+#### Register User
+
+**Request:**
 ```http
-# Get ALL resource keys for a locale - called only on app start or language change
-GET /api/localization/all?locale={locale}
+POST /api/auth/register
+Content-Type: application/json
 
-# Get supported locales
-GET /api/localization/locales
+{
+  "username": "johndoe",
+  "email": "john@example.com",
+  "password": "SecurePassword123!",
+  "registrationSecret": "your-super-secret-code"
+}
 ```
 
-#### **Products**
-
-```http
-GET    /api/products              # Get all products
-GET    /api/products/{id}         # Get single product
-POST   /api/products              # Create new product
-PUT    /api/products/{id}         # Update product
-DELETE /api/products/{id}         # Delete product
-GET    /api/products/search?q=... # Search
-POST   /api/products/{id}/stock   # Stock operation
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User registered successfully",
+  "userId": "550e8400-e29b-41d4-a716-446655440000"
+}
 ```
 
-#### **Voice**
+#### Login
 
+**Request:**
 ```http
-POST   /api/voice/process         # Process voice command
-GET    /api/voice/history         # Command history
-GET    /api/voice/analytics       # Voice analytics
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "username": "johndoe",
+  "password": "SecurePassword123!"
+}
 ```
 
-#### **History**
-
-```http
-GET    /api/history               # All operations
-GET    /api/history/product/{id}  # Product history
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NTBlODQwMC1lMjliLTQxZDQtYTcxNi00NDY2NTU0NDAwMDAiLCJ1bmlxdWVfbmFtZSI6ImpvaG5kb2UiLCJyb2xlIjoidXNlciIsImV4cCI6MTczODkzNDIwMH0...",
+  "expiresAt": "2026-02-08T10:30:00Z",
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "johndoe",
+    "email": "john@example.com",
+    "role": "user"
+  }
+}
 ```
 
-### Example Request/Response
+#### Get VAT Rate (App Startup)
+
+**Request:**
+```http
+GET /api/settings/vat
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Response:**
+```json
+{
+  "id": "660f9511-f3ac-41d4-a716-446655440000",
+  "rate": 27.00,
+  "effectiveFrom": "2024-01-01T00:00:00Z",
+  "description": "Hungarian standard VAT rate"
+}
+```
 
 #### Get ALL Localization Resources (App Startup)
 
 **Request:**
 ```http
 GET /api/localization/all?locale=en-US
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 **Response:**
@@ -440,108 +1148,53 @@ GET /api/localization/all?locale=en-US
   "locale": "en-US",
   "resources": {
     "UI_App_Title": "EchoWarehouse",
+    "UI_Auth_Login": "Login",
+    "UI_Auth_Register": "Register",
+    "UI_Auth_Username": "Username",
+    "UI_Auth_Password": "Password",
     "UI_Product_Name": "Product Name",
-    "UI_Product_Description": "Description",
     "UI_Product_Quantity": "Quantity",
-    "UI_Product_Unit": "Unit",
-    "UI_Product_Location": "Location",
-    "UI_Product_SerialNumber": "Serial Number",
-    "UI_Product_ArticleNumber": "Article Number",
     "UI_Product_NetPrice": "Net Price",
     "UI_Product_GrossPrice": "Gross Price",
     "UI_Voice_Listening": "Listening...",
-    "UI_Voice_Speak": "Click to Speak",
-    "UI_Voice_Heard": "I heard",
-    "UI_Voice_Result": "Result",
     "UI_Button_Save": "Save",
-    "UI_Button_Cancel": "Cancel",
-    "UI_Button_Edit": "Edit",
-    "UI_Button_Delete": "Delete",
-    "UI_Button_Add": "Add",
-    "UI_Button_Search": "Search",
-    "UI_Message_Success": "Operation successful",
-    "UI_Message_Error": "An error occurred",
-    "UI_Message_Loading": "Loading...",
-    "UI_Language_English": "English",
-    "UI_Language_Hungarian": "Hungarian",
-    "UI_Menu_Dashboard": "Dashboard",
-    "UI_Menu_Products": "Products",
-    "UI_Menu_History": "History",
-    "UI_Menu_Settings": "Settings"
+    "UI_Message_Success": "Operation successful"
   },
   "totalKeys": 150,
   "loadedAt": "2026-02-07T10:30:00Z"
 }
 ```
 
-**Hungarian Response:**
-```http
-GET /api/localization/all?locale=hu-HU
-```
-
-```json
-{
-  "locale": "hu-HU",
-  "resources": {
-    "UI_App_Title": "EchoWarehouse",
-    "UI_Product_Name": "Termék neve",
-    "UI_Product_Description": "Leírás",
-    "UI_Product_Quantity": "Mennyiség",
-    "UI_Product_Unit": "Mértékegység",
-    "UI_Product_Location": "Lokáció",
-    "UI_Product_SerialNumber": "Szériaszám",
-    "UI_Product_ArticleNumber": "Cikkszám",
-    "UI_Product_NetPrice": "Nettó ár",
-    "UI_Product_GrossPrice": "Bruttó ár",
-    "UI_Voice_Listening": "Hallgatlak...",
-    "UI_Voice_Speak": "Kattints a beszédhez",
-    "UI_Voice_Heard": "Hallottam",
-    "UI_Voice_Result": "Eredmény",
-    "UI_Button_Save": "Mentés",
-    "UI_Button_Cancel": "Mégse",
-    "UI_Button_Edit": "Szerkesztés",
-    "UI_Button_Delete": "Törlés",
-    "UI_Button_Add": "Hozzáadás",
-    "UI_Button_Search": "Keresés",
-    "UI_Message_Success": "Sikeres művelet",
-    "UI_Message_Error": "Hiba történt",
-    "UI_Message_Loading": "Betöltés...",
-    "UI_Language_English": "Angol",
-    "UI_Language_Hungarian": "Magyar",
-    "UI_Menu_Dashboard": "Irányítópult",
-    "UI_Menu_Products": "Termékek",
-    "UI_Menu_History": "Előzmények",
-    "UI_Menu_Settings": "Beállítások"
-  },
-  "totalKeys": 150,
-  "loadedAt": "2026-02-07T10:30:00Z"
-}
-```
-
-#### Get Supported Locales
+#### Create Product (Voice)
 
 **Request:**
 ```http
-GET /api/localization/locales
+POST /api/voice/process
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+
+{
+  "transcript": "Add 50 kilograms of cement to shelf 12",
+  "locale": "en-US"
+}
 ```
 
 **Response:**
 ```json
 {
-  "locales": [
-    {
-      "code": "en-US",
-      "name": "English (United States)",
-      "nativeName": "English",
-      "isDefault": true
-    },
-    {
-      "code": "hu-HU",
-      "name": "Hungarian (Hungary)",
-      "nativeName": "Magyar",
-      "isDefault": false
-    }
-  ]
+  "success": true,
+  "action": "add",
+  "message": "Successfully added: 50 kg Cement (Location: Shelf 12)",
+  "product": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Cement",
+    "quantity": 50,
+    "unit": "kg",
+    "location": "Shelf 12",
+    "voiceCreated": true,
+    "createdAt": "2026-02-07T10:30:00Z"
+  },
+  "processingTimeMs": 1250
 }
 ```
 
@@ -593,625 +1246,83 @@ GET /api/localization/locales
 "Mutasd meg a csavarokat"
 ```
 
+#### Update (English)
+```
+"Update [product name] quantity to [new quantity]"
+"Change cement to 200 kilograms"
+```
+
+#### Update (Hungarian)
+```
+"Módosítsd a [termék név] mennyiségét [új mennyiség]-re"
+"A cement legyen 200 kilogramm"
+```
+
+#### Delete (English)
+```
+"Delete [product name]"
+"Remove paint from the system"
+```
+
+#### Delete (Hungarian)
+```
+"Törölj [termék név]"
+"Vedd ki a festéket a rendszerből"
+```
+
+### AI Intent Parsing
+
+The system uses Google Gemini 1.5 Flash for natural language understanding. The AI extracts:
+- Action type (add, remove, update, search, delete)
+- Product name
+- Quantity and unit
+- Location
+- Additional metadata (serial number, article number if mentioned)
+- Confidence score
+
 ---
 
 ## 🌐 Internationalization
 
-### Database Schema for Localization
+### How It Works
 
-```sql
--- Resource Keys table (all UI text stored here)
-CREATE TABLE resource_keys (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    key VARCHAR(255) NOT NULL,              -- 'UI_Product_Name'
-    locale VARCHAR(10) NOT NULL,            -- 'en-US', 'hu-HU'
-    value TEXT NOT NULL,                    -- 'Product Name'
-    category VARCHAR(50),                   -- 'product', 'voice', 'common'
-    description TEXT,                       -- For translators
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    UNIQUE(key, locale)
-);
+1. **Database Storage**: All UI text is stored as resource keys in PostgreSQL
+2. **One-Time Load**: Frontend fetches all keys for selected locale on app startup (after authentication)
+3. **Context Storage**: Translations stored in React Context (no prop drilling)
+4. **Simple Hook**: `useLocalization()` hook provides `t()` function
+5. **No URL Parameters**: Locale stored in LocalStorage, not in API requests
+6. **Instant Switching**: Language change reloads context from backend
 
--- Indexes for performance
-CREATE INDEX idx_resource_keys_locale ON resource_keys(locale);
-CREATE INDEX idx_resource_keys_key ON resource_keys(key);
-CREATE INDEX idx_resource_keys_category ON resource_keys(category);
+### Resource Key Naming Convention
+
+```
+UI_{Section}_{Element}_{Property}
+
+Examples:
+- UI_Auth_Login
+- UI_Auth_Register
+- UI_Product_Name
+- UI_Product_Quantity
+- UI_Voice_Listening
+- UI_Button_Save
+- UI_Message_Success
+- UI_Menu_Dashboard
 ```
 
-### Sample Resource Keys
+### Supported Locales
 
-```sql
--- English (en-US)
-INSERT INTO resource_keys (key, locale, value, category, description) VALUES
-('UI_Product_Name', 'en-US', 'Product Name', 'product', 'Label for product name field'),
-('UI_Product_Quantity', 'en-US', 'Quantity', 'product', 'Label for quantity field'),
-('UI_Voice_Listening', 'en-US', 'Listening...', 'voice', 'Status text while listening'),
-('UI_Button_Save', 'en-US', 'Save', 'common', 'Save button text'),
-('UI_Message_Success', 'en-US', 'Operation successful', 'common', 'Success message');
+- **en-US** - English (United States)
+- **hu-HU** - Hungarian (Hungary)
 
--- Hungarian (hu-HU)
-INSERT INTO resource_keys (key, locale, value, category, description) VALUES
-('UI_Product_Name', 'hu-HU', 'Termék neve', 'product', 'Termék név mező címke'),
-('UI_Product_Quantity', 'hu-HU', 'Mennyiség', 'product', 'Mennyiség mező címke'),
-('UI_Voice_Listening', 'hu-HU', 'Hallgatlak...', 'voice', 'Státusz szöveg hallgatás közben'),
-('UI_Button_Save', 'hu-HU', 'Mentés', 'common', 'Mentés gomb szöveg'),
-('UI_Message_Success', 'hu-HU', 'Sikeres művelet', 'common', 'Siker üzenet');
-```
+### Adding New Locales
 
-### Backend Implementation
+1. Add locale code to `appsettings.json` under `Localization:SupportedLocales`
+2. Add resource keys to database with new locale code
+3. Frontend automatically detects new locale from API
 
-#### Localization Service
+### Adding New Resource Keys
 
-```csharp
-// Services/Interfaces/ILocalizationService.cs
-public interface ILocalizationService
-{
-    Task<Dictionary<string, string>> GetAllResourcesAsync(string locale);
-    Task<IEnumerable<string>> GetSupportedLocalesAsync();
-    Task SeedDefaultResourcesAsync();
-}
-
-// Services/Implementations/LocalizationService.cs
-public class LocalizationService : ILocalizationService
-{
-    private readonly IResourceKeyRepository _resourceKeyRepo;
-    private readonly IMemoryCache _cache;
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<LocalizationService> _logger;
-
-    public LocalizationService(
-        IResourceKeyRepository resourceKeyRepo,
-        IMemoryCache cache,
-        IConfiguration configuration,
-        ILogger<LocalizationService> logger)
-    {
-        _resourceKeyRepo = resourceKeyRepo;
-        _cache = cache;
-        _configuration = configuration;
-        _logger = logger;
-    }
-
-    public async Task<Dictionary<string, string>> GetAllResourcesAsync(string locale)
-    {
-        // Check cache first (optional server-side caching)
-        var cacheKey = $"resources_{locale}";
-        
-        if (_cache.TryGetValue(cacheKey, out Dictionary<string, string>? cached))
-        {
-            _logger.LogInformation("Returning cached resources for locale: {Locale}", locale);
-            return cached!;
-        }
-
-        // Load all resource keys for this locale from database
-        var resources = await _resourceKeyRepo.GetByLocaleAsync(locale);
-        var dictionary = resources.ToDictionary(r => r.Key, r => r.Value);
-
-        _logger.LogInformation(
-            "Loaded {Count} resource keys for locale: {Locale}", 
-            dictionary.Count, 
-            locale);
-
-        // Cache on server side for 1 hour (optional)
-        _cache.Set(cacheKey, dictionary, TimeSpan.FromHours(1));
-
-        return dictionary;
-    }
-
-    public async Task<IEnumerable<string>> GetSupportedLocalesAsync()
-    {
-        var supportedLocales = _configuration
-            .GetSection("Localization:SupportedLocales")
-            .Get<string[]>();
-
-        return supportedLocales ?? new[] { "en-US" };
-    }
-
-    public async Task SeedDefaultResourcesAsync()
-    {
-        _logger.LogInformation("Seeding default resource keys...");
-
-        var defaultKeys = new[]
-        {
-            // Common - English
-            new ResourceKey { Key = "UI_App_Title", Locale = "en-US", Value = "EchoWarehouse", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Save", Locale = "en-US", Value = "Save", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Cancel", Locale = "en-US", Value = "Cancel", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Edit", Locale = "en-US", Value = "Edit", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Delete", Locale = "en-US", Value = "Delete", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Add", Locale = "en-US", Value = "Add", Category = "common" },
-            new ResourceKey { Key = "UI_Message_Success", Locale = "en-US", Value = "Operation successful", Category = "common" },
-            new ResourceKey { Key = "UI_Message_Error", Locale = "en-US", Value = "An error occurred", Category = "common" },
-            
-            // Product - English
-            new ResourceKey { Key = "UI_Product_Name", Locale = "en-US", Value = "Product Name", Category = "product" },
-            new ResourceKey { Key = "UI_Product_Quantity", Locale = "en-US", Value = "Quantity", Category = "product" },
-            new ResourceKey { Key = "UI_Product_Location", Locale = "en-US", Value = "Location", Category = "product" },
-            
-            // Voice - English
-            new ResourceKey { Key = "UI_Voice_Listening", Locale = "en-US", Value = "Listening...", Category = "voice" },
-            new ResourceKey { Key = "UI_Voice_Speak", Locale = "en-US", Value = "Click to Speak", Category = "voice" },
-
-            // Common - Hungarian
-            new ResourceKey { Key = "UI_App_Title", Locale = "hu-HU", Value = "EchoWarehouse", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Save", Locale = "hu-HU", Value = "Mentés", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Cancel", Locale = "hu-HU", Value = "Mégse", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Edit", Locale = "hu-HU", Value = "Szerkesztés", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Delete", Locale = "hu-HU", Value = "Törlés", Category = "common" },
-            new ResourceKey { Key = "UI_Button_Add", Locale = "hu-HU", Value = "Hozzáadás", Category = "common" },
-            new ResourceKey { Key = "UI_Message_Success", Locale = "hu-HU", Value = "Sikeres művelet", Category = "common" },
-            new ResourceKey { Key = "UI_Message_Error", Locale = "hu-HU", Value = "Hiba történt", Category = "common" },
-            
-            // Product - Hungarian
-            new ResourceKey { Key = "UI_Product_Name", Locale = "hu-HU", Value = "Termék neve", Category = "product" },
-            new ResourceKey { Key = "UI_Product_Quantity", Locale = "hu-HU", Value = "Mennyiség", Category = "product" },
-            new ResourceKey { Key = "UI_Product_Location", Locale = "hu-HU", Value = "Lokáció", Category = "product" },
-            
-            // Voice - Hungarian
-            new ResourceKey { Key = "UI_Voice_Listening", Locale = "hu-HU", Value = "Hallgatlak...", Category = "voice" },
-            new ResourceKey { Key = "UI_Voice_Speak", Locale = "hu-HU", Value = "Kattints a beszédhez", Category = "voice" }
-        };
-
-        await _resourceKeyRepo.SeedAsync(defaultKeys);
-        _logger.LogInformation("Seeded {Count} resource keys", defaultKeys.Length);
-    }
-}
-```
-
-#### Localization Controller
-
-```csharp
-// Controllers/LocalizationController.cs
-[ApiController]
-[Route("api/[controller]")]
-public class LocalizationController : ControllerBase
-{
-    private readonly ILocalizationService _localizationService;
-    private readonly ILogger<LocalizationController> _logger;
-
-    public LocalizationController(
-        ILocalizationService localizationService,
-        ILogger<LocalizationController> logger)
-    {
-        _localizationService = localizationService;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Get ALL resource keys for a locale - called ONCE on app startup
-    /// </summary>
-    [HttpGet("all")]
-    public async Task<IActionResult> GetAllResources([FromQuery] string locale = "en-US")
-    {
-        _logger.LogInformation("Loading all resources for locale: {Locale}", locale);
-
-        var resources = await _localizationService.GetAllResourcesAsync(locale);
-
-        return Ok(new
-        {
-            Locale = locale,
-            Resources = resources,
-            TotalKeys = resources.Count,
-            LoadedAt = DateTime.UtcNow
-        });
-    }
-
-    /// <summary>
-    /// Get supported locales
-    /// </summary>
-    [HttpGet("locales")]
-    public async Task<IActionResult> GetSupportedLocales()
-    {
-        var locales = await _localizationService.GetSupportedLocalesAsync();
-
-        return Ok(new
-        {
-            Locales = locales.Select(l => new
-            {
-                Code = l,
-                Name = GetLocaleName(l),
-                NativeName = GetNativeName(l),
-                IsDefault = l == "en-US"
-            })
-        });
-    }
-
-    private string GetLocaleName(string locale) => locale switch
-    {
-        "en-US" => "English (United States)",
-        "hu-HU" => "Hungarian (Hungary)",
-        _ => locale
-    };
-
-    private string GetNativeName(string locale) => locale switch
-    {
-        "en-US" => "English",
-        "hu-HU" => "Magyar",
-        _ => locale
-    };
-}
-```
-
-#### Resource Key Repository
-
-```csharp
-// Repositories/Interfaces/IResourceKeyRepository.cs
-public interface IResourceKeyRepository : IGenericRepository<ResourceKey>
-{
-    Task<IEnumerable<ResourceKey>> GetByLocaleAsync(string locale);
-    Task<IEnumerable<ResourceKey>> GetByCategoryAsync(string category, string locale);
-    Task<string?> GetValueAsync(string key, string locale);
-    Task SeedAsync(IEnumerable<ResourceKey> keys);
-}
-
-// Repositories/Implementations/ResourceKeyRepository.cs
-public class ResourceKeyRepository : GenericRepository<ResourceKey>, IResourceKeyRepository
-{
-    public ResourceKeyRepository(AppDbContext context) : base(context)
-    {
-    }
-
-    public async Task<IEnumerable<ResourceKey>> GetByLocaleAsync(string locale)
-    {
-        return await _context.ResourceKeys
-            .Where(r => r.Locale == locale)
-            .OrderBy(r => r.Key)
-            .AsNoTracking()
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<ResourceKey>> GetByCategoryAsync(
-        string category, 
-        string locale)
-    {
-        return await _context.ResourceKeys
-            .Where(r => r.Category == category && r.Locale == locale)
-            .AsNoTracking()
-            .ToListAsync();
-    }
-
-    public async Task<string?> GetValueAsync(string key, string locale)
-    {
-        var resource = await _context.ResourceKeys
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Key == key && r.Locale == locale);
-        
-        return resource?.Value;
-    }
-
-    public async Task SeedAsync(IEnumerable<ResourceKey> keys)
-    {
-        foreach (var key in keys)
-        {
-            var exists = await _context.ResourceKeys
-                .AnyAsync(r => r.Key == key.Key && r.Locale == key.Locale);
-            
-            if (!exists)
-            {
-                await _context.ResourceKeys.AddAsync(key);
-            }
-        }
-        
-        await _context.SaveChangesAsync();
-    }
-}
-```
-
-### Frontend Implementation
-
-#### Localization Context
-
-```typescript
-// context/LocalizationContext.tsx
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import axios from 'axios';
-
-interface LocalizationContextType {
-  locale: string;
-  resources: Record<string, string>;
-  isLoading: boolean;
-  error: string | null;
-  changeLocale: (newLocale: string) => Promise<void>;
-  t: (key: string, fallback?: string) => string;
-}
-
-const LocalizationContext = createContext<LocalizationContextType | undefined>(undefined);
-
-const API_URL = import.meta.env.VITE_API_URL;
-const DEFAULT_LOCALE = import.meta.env.VITE_DEFAULT_LOCALE || 'en-US';
-
-export const LocalizationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [locale, setLocale] = useState<string>(
-    localStorage.getItem('locale') || DEFAULT_LOCALE
-  );
-  const [resources, setResources] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Load resources from API
-  const loadResources = async (targetLocale: string) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      console.log(`Loading resources for locale: ${targetLocale}`);
-      
-      const response = await axios.get(`${API_URL}/api/localization/all`, {
-        params: { locale: targetLocale }
-      });
-
-      const { resources: fetchedResources, totalKeys } = response.data;
-
-      console.log(`Loaded ${totalKeys} resource keys for ${targetLocale}`);
-
-      // Store in state
-      setResources(fetchedResources);
-
-      // Save locale to LocalStorage
-      localStorage.setItem('locale', targetLocale);
-      setLocale(targetLocale);
-
-      setIsLoading(false);
-    } catch (err) {
-      console.error('Failed to load localization resources:', err);
-      setError('Failed to load translations');
-      setIsLoading(false);
-    }
-  };
-
-  // Load resources on mount
-  useEffect(() => {
-    loadResources(locale);
-  }, []);
-
-  // Change locale function
-  const changeLocale = async (newLocale: string) => {
-    if (newLocale === locale) return;
-    await loadResources(newLocale);
-  };
-
-  // Translation function with fallback
-  const t = (key: string, fallback?: string): string => {
-    if (resources[key]) {
-      return resources[key];
-    }
-
-    // Fallback to key or provided fallback
-    console.warn(`Translation key not found: ${key}`);
-    return fallback || key;
-  };
-
-  return (
-    <LocalizationContext.Provider
-      value={{
-        locale,
-        resources,
-        isLoading,
-        error,
-        changeLocale,
-        t
-      }}
-    >
-      {children}
-    </LocalizationContext.Provider>
-  );
-};
-
-export default LocalizationContext;
-```
-
-#### useLocalization Hook
-
-```typescript
-// hooks/useLocalization.ts
-import { useContext } from 'react';
-import LocalizationContext from '../context/LocalizationContext';
-
-export const useLocalization = () => {
-  const context = useContext(LocalizationContext);
-
-  if (!context) {
-    throw new Error('useLocalization must be used within LocalizationProvider');
-  }
-
-  return context;
-};
-```
-
-#### App Setup
-
-```typescript
-// main.tsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App';
-import { LocalizationProvider } from './context/LocalizationContext';
-import './index.css';
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <LocalizationProvider>
-      <App />
-    </LocalizationProvider>
-  </React.StrictMode>
-);
-```
-
-```typescript
-// App.tsx
-import React from 'react';
-import { useLocalization } from './hooks/useLocalization';
-import ProductList from './components/products/ProductList';
-import VoiceInput from './components/voice/VoiceInput';
-import LanguageSwitcher from './components/common/LanguageSwitcher';
-
-const App: React.FC = () => {
-  const { isLoading, error, t } = useLocalization();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-xl">{t('UI_Message_Loading', 'Loading...')}</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-xl text-red-600">{error}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <nav className="bg-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">{t('UI_App_Title')}</h1>
-          <LanguageSwitcher />
-        </div>
-      </nav>
-
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <VoiceInput />
-        <ProductList />
-      </main>
-    </div>
-  );
-};
-
-export default App;
-```
-
-#### Component Usage Example
-
-```typescript
-// components/products/ProductForm.tsx
-import React, { useState } from 'react';
-import { useLocalization } from '../../hooks/useLocalization';
-
-interface ProductFormProps {
-  onSubmit: (data: any) => void;
-  onCancel: () => void;
-}
-
-const ProductForm: React.FC<ProductFormProps> = ({ onSubmit, onCancel }) => {
-  const { t } = useLocalization();
-  const [name, setName] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [location, setLocation] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({ name, quantity: parseFloat(quantity), location });
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <h2 className="text-xl font-bold">{t('UI_Product_Add')}</h2>
-
-      <div>
-        <label className="block text-sm font-medium">
-          {t('UI_Product_Name')}
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('UI_Product_Name')}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-          required
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium">
-          {t('UI_Product_Quantity')}
-        </label>
-        <input
-          type="number"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          placeholder={t('UI_Product_Quantity')}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-          required
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium">
-          {t('UI_Product_Location')}
-        </label>
-        <input
-          type="text"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          placeholder={t('UI_Product_Location')}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-        />
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          {t('UI_Button_Save')}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-        >
-          {t('UI_Button_Cancel')}
-        </button>
-      </div>
-    </form>
-  );
-};
-
-export default ProductForm;
-```
-
-#### Language Switcher Component
-
-```typescript
-// components/common/LanguageSwitcher.tsx
-import React from 'react';
-import { useLocalization } from '../../hooks/useLocalization';
-
-const LanguageSwitcher: React.FC = () => {
-  const { locale, changeLocale, t } = useLocalization();
-
-  const languages = [
-    { code: 'en-US', name: 'English', flag: '🇬🇧' },
-    { code: 'hu-HU', name: 'Magyar', flag: '🇭🇺' }
-  ];
-
-  return (
-    <div className="flex gap-2">
-      {languages.map((lang) => (
-        <button
-          key={lang.code}
-          onClick={() => changeLocale(lang.code)}
-          className={`px-3 py-2 rounded-lg transition-colors ${
-            locale === lang.code
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-          }`}
-          disabled={locale === lang.code}
-        >
-          <span className="mr-2">{lang.flag}</span>
-          {lang.name}
-        </button>
-      ))}
-    </div>
-  );
-};
-
-export default LanguageSwitcher;
-```
+Add keys to the `resource_keys` table with appropriate locale codes. The frontend will automatically pick them up on next language load or app restart.
 
 ---
 
@@ -1224,64 +1335,87 @@ EchoWarehouse/
 ├── backend/
 │   ├── EchoWarehouse.API/
 │   │   ├── Controllers/
+│   │   │   ├── AuthController.cs              # Authentication
 │   │   │   ├── ProductsController.cs
 │   │   │   ├── VoiceController.cs
 │   │   │   ├── HistoryController.cs
-│   │   │   ├── LocalizationController.cs       # One-time load endpoint
+│   │   │   ├── LocalizationController.cs
+│   │   │   ├── SettingsController.cs         # VAT settings
 │   │   │   └── HealthController.cs
 │   │   ├── Services/
 │   │   │   ├── Interfaces/
+│   │   │   │   ├── IAuthService.cs
+│   │   │   │   ├── ITokenService.cs
 │   │   │   │   ├── IVoiceService.cs
 │   │   │   │   ├── ISpeechService.cs
 │   │   │   │   ├── IAIService.cs
 │   │   │   │   ├── IProductService.cs
-│   │   │   │   └── ILocalizationService.cs
+│   │   │   │   ├── ILocalizationService.cs
+│   │   │   │   └── IVatSettingsService.cs
 │   │   │   └── Implementations/
+│   │   │       ├── AuthService.cs
+│   │   │       ├── TokenService.cs
 │   │   │       ├── VoiceService.cs
 │   │   │       ├── AzureSpeechService.cs
 │   │   │       ├── GoogleGeminiService.cs
 │   │   │       ├── ProductService.cs
-│   │   │       └── LocalizationService.cs
+│   │   │       ├── LocalizationService.cs
+│   │   │       └── VatSettingsService.cs
 │   │   ├── Repositories/
 │   │   │   ├── Interfaces/
 │   │   │   │   ├── IGenericRepository.cs
+│   │   │   │   ├── IUserRepository.cs
 │   │   │   │   ├── IProductRepository.cs
 │   │   │   │   ├── IVoiceCommandRepository.cs
 │   │   │   │   ├── IHistoryRepository.cs
 │   │   │   │   ├── IResourceKeyRepository.cs
+│   │   │   │   ├── IVatSettingsRepository.cs
 │   │   │   │   └── IUnitOfWork.cs
 │   │   │   └── Implementations/
 │   │   │       ├── GenericRepository.cs
+│   │   │       ├── UserRepository.cs
 │   │   │       ├── ProductRepository.cs
 │   │   │       ├── VoiceCommandRepository.cs
 │   │   │       ├── HistoryRepository.cs
 │   │   │       ├── ResourceKeyRepository.cs
+│   │   │       ├── VatSettingsRepository.cs
 │   │   │       └── UnitOfWork.cs
 │   │   ├── Data/
 │   │   │   ├── AppDbContext.cs
 │   │   │   ├── Migrations/
 │   │   │   └── Seed/
-│   │   │       └── LocalizationSeeder.cs
+│   │   │       ├── LocalizationSeeder.cs
+│   │   │       └── VatSettingsSeeder.cs
 │   │   ├── Models/
 │   │   │   ├── Entities/
+│   │   │   │   ├── User.cs
 │   │   │   │   ├── Product.cs
 │   │   │   │   ├── VoiceCommand.cs
 │   │   │   │   ├── History.cs
-│   │   │   │   ├── ResourceKey.cs           # UI text storage
+│   │   │   │   ├── ResourceKey.cs
+│   │   │   │   ├── VatSettings.cs
 │   │   │   │   └── BaseEntity.cs
 │   │   │   ├── DTOs/
+│   │   │   │   ├── Auth/
+│   │   │   │   │   ├── RegisterDto.cs
+│   │   │   │   │   ├── LoginDto.cs
+│   │   │   │   │   └── AuthResponseDto.cs
 │   │   │   │   ├── ProductDto.cs
 │   │   │   │   ├── VoiceCommandDto.cs
 │   │   │   │   ├── VoiceIntentDto.cs
 │   │   │   │   ├── LocalizationDto.cs
+│   │   │   │   ├── VatSettingsDto.cs
 │   │   │   │   └── CreateProductDto.cs
 │   │   │   └── ViewModels/
 │   │   │       ├── ProductViewModel.cs
 │   │   │       └── PaginatedResponse.cs
 │   │   ├── Middleware/
 │   │   │   ├── ErrorHandlingMiddleware.cs
-│   │   │   └── RequestLoggingMiddleware.cs
+│   │   │   ├── RequestLoggingMiddleware.cs
+│   │   │   └── JwtMiddleware.cs
 │   │   ├── Validators/
+│   │   │   ├── RegisterValidator.cs
+│   │   │   ├── LoginValidator.cs
 │   │   │   ├── ProductValidator.cs
 │   │   │   └── VoiceCommandValidator.cs
 │   │   ├── Extensions/
@@ -1291,11 +1425,15 @@ EchoWarehouse/
 │   │   ├── Mappings/
 │   │   │   └── AutoMapperProfile.cs
 │   │   ├── appsettings.json
-│   │   ├── appsettings.Development.json
+│   │   ├── appsettings.Development.json       # NOT in git
+│   │   ├── .gitignore                         # Must include .env, appsettings.Development.json
 │   │   ├── Program.cs
 │   │   └── EchoWarehouse.API.csproj
 │   ├── EchoWarehouse.Tests/
 │   │   ├── Unit/
+│   │   │   ├── AuthServiceTests.cs
+│   │   │   ├── VatCalculationTests.cs
+│   │   │   └── ...
 │   │   ├── Integration/
 │   │   └── EchoWarehouse.Tests.csproj
 │   └── EchoWarehouse.sln
@@ -1307,6 +1445,10 @@ EchoWarehouse/
 frontend/
 ├── src/
 │   ├── components/
+│   │   ├── auth/
+│   │   │   ├── LoginForm.tsx
+│   │   │   ├── RegisterForm.tsx
+│   │   │   └── ProtectedRoute.tsx
 │   │   ├── voice/
 │   │   │   ├── VoiceInput.tsx
 │   │   │   ├── VoiceStatus.tsx
@@ -1314,12 +1456,12 @@ frontend/
 │   │   ├── products/
 │   │   │   ├── ProductList.tsx
 │   │   │   ├── ProductCard.tsx
-│   │   │   ├── ProductForm.tsx              # Uses t('UI_Product_Name')
+│   │   │   ├── ProductForm.tsx              # VAT calculation here
 │   │   │   ├── ProductDetails.tsx
 │   │   │   └── ProductSearch.tsx
 │   │   ├── common/
 │   │   │   ├── Navbar.tsx
-│   │   │   ├── LanguageSwitcher.tsx         # Calls changeLocale()
+│   │   │   ├── LanguageSwitcher.tsx
 │   │   │   ├── Loader.tsx
 │   │   │   ├── ErrorBoundary.tsx
 │   │   │   └── Modal.tsx
@@ -1327,38 +1469,50 @@ frontend/
 │   │       ├── Layout.tsx
 │   │       └── Sidebar.tsx
 │   ├── services/
-│   │   ├── api.ts
+│   │   ├── api.ts                          # Axios with JWT interceptor
+│   │   ├── authService.ts
 │   │   ├── voiceService.ts
 │   │   ├── productService.ts
-│   │   └── localizationService.ts           # Optional utility functions
+│   │   ├── localizationService.ts
+│   │   └── vatService.ts
 │   ├── hooks/
+│   │   ├── useAuth.ts                      # Authentication hook
 │   │   ├── useVoice.ts
 │   │   ├── useProducts.ts
-│   │   ├── useLocalization.ts               # Main hook: returns t()
+│   │   ├── useLocalization.ts
+│   │   ├── useVat.ts                       # VAT calculation hook
 │   │   └── useDebounce.ts
 │   ├── context/
-│   │   ├── LocalizationContext.tsx          # Stores ALL resources
+│   │   ├── AuthContext.tsx                 # Auth state
+│   │   ├── LocalizationContext.tsx         # All translations
+│   │   ├── VatContext.tsx                  # VAT rate
 │   │   └── AppContext.tsx
 │   ├── types/
+│   │   ├── auth.types.ts
 │   │   ├── product.types.ts
 │   │   ├── voice.types.ts
 │   │   ├── localization.types.ts
+│   │   ├── vat.types.ts
 │   │   └── api.types.ts
 │   ├── utils/
 │   │   ├── formatters.ts
 │   │   ├── validators.ts
+│   │   ├── vatCalculator.ts               # VAT calculation logic
 │   │   └── constants.ts
 │   ├── pages/
+│   │   ├── Login.tsx
+│   │   ├── Register.tsx
 │   │   ├── Home.tsx
 │   │   ├── Products.tsx
 │   │   ├── History.tsx
 │   │   └── Settings.tsx
 │   ├── App.tsx
-│   ├── main.tsx                             # Wraps with LocalizationProvider
+│   ├── main.tsx
 │   └── index.css
 ├── public/
 ├── .env.example
-├── .env
+├── .env                                    # NOT in git
+├── .gitignore                              # Must include .env
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -1371,7 +1525,7 @@ frontend/
 
 ### Backend - Azure App Service
 
-#### Azure CLI
+#### Using Azure CLI
 
 ```bash
 # Login
@@ -1394,12 +1548,14 @@ az webapp create \
   --plan EchoWarehouse-Plan \
   --runtime "DOTNET|8.0"
 
-# Configure environment variables
+# Configure environment variables (CRITICAL - SET SECRETS!)
 az webapp config appsettings set \
   --name echowarehouse-api \
   --resource-group EchoWarehouse-RG \
   --settings \
     ConnectionStrings__DefaultConnection="Host=..." \
+    Authentication__RegistrationSecret="YOUR-SECRET-CODE" \
+    Authentication__JwtSecret="YOUR-JWT-SECRET-MIN-32-CHARS" \
     AzureSpeech__SubscriptionKey="..." \
     GoogleGemini__ApiKey="..."
 
@@ -1413,9 +1569,9 @@ az webapp deployment source config-zip \
   --src deploy.zip
 ```
 
-#### GitHub Actions
+#### Using GitHub Actions
 
-`.github/workflows/deploy-backend.yml`:
+Create `.github/workflows/deploy-backend.yml`:
 
 ```yaml
 name: Deploy Backend to Azure
@@ -1455,6 +1611,11 @@ jobs:
         package: ./publish
 ```
 
+**⚠️ IMPORTANT: Set GitHub Secrets**
+- Go to repository Settings → Secrets → Actions
+- Add `AZURE_WEBAPP_PUBLISH_PROFILE`
+- Set environment variables in Azure Portal
+
 ### Frontend - Firebase Hosting
 
 ```bash
@@ -1475,9 +1636,9 @@ npm run build
 firebase deploy --only hosting
 ```
 
-#### GitHub Actions
+#### Using GitHub Actions
 
-`.github/workflows/deploy-frontend.yml`:
+Create `.github/workflows/deploy-frontend.yml`:
 
 ```yaml
 name: Deploy Frontend to Firebase
@@ -1517,9 +1678,9 @@ jobs:
         projectId: echowarehouse
 ```
 
-### Docker
+### Docker Deployment
 
-`docker-compose.yml`:
+#### docker-compose.yml
 
 ```yaml
 version: '3.8'
@@ -1530,11 +1691,16 @@ services:
     environment:
       POSTGRES_DB: echowarehouse
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: yourpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -1543,53 +1709,130 @@ services:
     ports:
       - "5001:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=echowarehouse;Username=postgres;Password=yourpassword
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=echowarehouse;Username=postgres;Password=${POSTGRES_PASSWORD}
+      - Authentication__RegistrationSecret=${REGISTRATION_SECRET}
+      - Authentication__JwtSecret=${JWT_SECRET}
       - AzureSpeech__SubscriptionKey=${AZURE_SPEECH_KEY}
       - GoogleGemini__ApiKey=${GOOGLE_GEMINI_KEY}
+      - Swagger__Enabled=true
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data:
 ```
 
----
+#### .env file for Docker (NOT in git!)
 
-## 👨‍💻 Development
+```env
+POSTGRES_PASSWORD=your-secure-postgres-password
+REGISTRATION_SECRET=your-super-secret-registration-code
+JWT_SECRET=your-jwt-secret-minimum-32-characters-long
+AZURE_SPEECH_KEY=your-azure-speech-key
+GOOGLE_GEMINI_KEY=your-google-gemini-api-key
+```
 
-### Testing
+#### Running with Docker
 
 ```bash
-# Backend unit tests
+# Create .env file first (see above)
+
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f backend
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes
+docker-compose down -v
+```
+
+---
+
+## 🧪 Testing
+
+### Backend Tests
+
+```bash
 cd backend
+
+# Run all tests
 dotnet test
 
-# Frontend tests
+# Run with coverage
+dotnet test /p:CollectCoverage=true /p:CoverageReportFormat=opencover
+
+# Run specific test project
+dotnet test EchoWarehouse.Tests/EchoWarehouse.Tests.csproj
+
+# Run specific test
+dotnet test --filter "FullyQualifiedName~AuthServiceTests"
+```
+
+### Frontend Tests
+
+```bash
 cd frontend
+
+# Run unit tests
 npm run test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run with coverage
+npm run test:coverage
 
 # E2E tests (Playwright)
 npm run test:e2e
 ```
 
-### Adding New Resource Keys
+---
 
-#### Backend (Database)
+## 🔒 Security Best Practices
 
-```sql
--- Add new keys to database
-INSERT INTO resource_keys (key, locale, value, category, description) VALUES
-('UI_New_Feature', 'en-US', 'New Feature', 'common', 'New feature label'),
-('UI_New_Feature', 'hu-HU', 'Új funkció', 'common', 'Új funkció címke');
+### Environment Variables
+
+**Never commit these files:**
+- `appsettings.Development.json`
+- `.env`
+- `*.env`
+- Any file containing secrets
+
+**Always add to `.gitignore`:**
+```gitignore
+# Secrets
+appsettings.Development.json
+.env
+.env.*
+!.env.example
+
+# User-specific files
+*.user
+*.suo
 ```
 
-#### Frontend Usage
+### Production Checklist
 
-```typescript
-// Immediately available after language switch (reloads context)
-const { t } = useLocalization();
-<h1>{t('UI_New_Feature')}</h1>
-```
+- [ ] Set strong `REGISTRATION_SECRET` (minimum 32 characters)
+- [ ] Set strong `JWT_SECRET` (minimum 32 characters)
+- [ ] Use HTTPS in production
+- [ ] Use Azure Key Vault or similar for secrets
+- [ ] Enable CORS only for trusted origins
+- [ ] Set secure password policy
+- [ ] Enable rate limiting
+- [ ] Enable logging and monitoring
+- [ ] Regular security audits
+- [ ] Keep dependencies updated
 
 ---
 
@@ -1606,7 +1849,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - GitHub: [@OmniStruo](https://github.com/OmniStruo)
 - Project: [EchoWarehouse](https://github.com/OmniStruo/EchoWarehouse)
 
-**Devs**
-
 ---
 
+**Made with ❤️ and 🎤 by OmniStruo**
